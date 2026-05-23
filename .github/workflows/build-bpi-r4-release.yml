@@ -50,9 +50,27 @@ jobs:
 
       - name: Load BPI-R4 config
         run: |
+          set -euxo pipefail
           cp -f defconfig/mt7988-bpi-r4-be14.config .config
-          make defconfig
-          ./scripts/config set-str CONFIG_TARGET_PROFILE "$PROFILE"
+
+          # Do not use ./scripts/config (it may be a directory in some trees)
+          # Switch device by target symbols directly.
+          sed -i '/^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_bananapi_bpi-r4=/d' .config
+          sed -i '/^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_bananapi_bpi-r4-poe=/d' .config
+
+          case "$PROFILE" in
+            bananapi_bpi-r4)
+              echo 'CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_bananapi_bpi-r4=y' >> .config
+              ;;
+            bananapi_bpi-r4-poe)
+              echo 'CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_bananapi_bpi-r4-poe=y' >> .config
+              ;;
+            *)
+              echo "Unsupported profile: $PROFILE" >&2
+              exit 1
+              ;;
+          esac
+
           make defconfig
 
       - name: Download sources
