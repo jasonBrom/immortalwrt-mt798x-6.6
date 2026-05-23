@@ -12,16 +12,26 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential clang flex bison g++ gawk gcc-multilib gettext \
-            git libncurses5-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget
+          sudo apt install -y \
+            ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+            bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk \
+            gettext gcc-multilib g++-multilib git gnutls-dev gperf haveged help2man intltool \
+            lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
+            libmpc-dev libmpfr-dev libncurses-dev libpython3-dev libreadline-dev libssl-dev \
+            libtool libyaml-dev libz-dev lld llvm lrzsz mkisofs msmtp nano ninja-build \
+            p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply python3-docutils \
+            python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig \
+            texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
 
       - name: Feeds update/install
         run: |
@@ -34,10 +44,15 @@ jobs:
           make defconfig
 
       - name: Download sources
-        run: make download -j$(nproc)
+        run: make download -j"$(nproc)"
 
-      - name: Build firmware
-        run: make -j$(nproc) V=s
+      - name: Build firmware (retry once with -j1)
+        run: |
+          set -o pipefail
+          make -j"$(nproc)" V=s || {
+            echo "Parallel build failed, retry with single job for clear logs..."
+            make -j1 V=s
+          }
 
       - name: Pack artifacts
         run: |
@@ -62,6 +77,6 @@ jobs:
             - LuCI 主题: Argon
             - 默认语言: 中文
             - 启用 MediaTek HNAT
-            - 尝试启用 MTK 闭源 WiFi 驱动（BE14）
+            - 启用 BPI-R4 MT7996 系列 WiFi 固件包（BE14 方向）
           files: |
             artifacts/*
