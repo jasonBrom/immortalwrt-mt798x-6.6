@@ -1,0 +1,125 @@
+name: Build BPI-R4 and Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Device profile"
+        required: true
+        default: "bananapi_bpi-r4"
+        type: choice
+        options:
+          - bananapi_bpi-r4
+          - bananapi_bpi-r4-poe
+  push:
+    paths:
+      - '.github/workflows/build-bpi-r4-release.yml'
+      - 'defconfig/mt7988-bpi-r4-be14.config'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      PROFILE: ${{ inputs.profile || 'bananapi_bpi-r4' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+            bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk \
+            gettext gcc-multilib g++-multilib git gnutls-dev gperf haveged help2man intltool \
+            lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
+            libmpc-dev libmpfr-dev libncurses-dev libpython3-dev libreadline-dev libssl-dev \
+            libtool libyaml-dev libz-dev lld llvm lrzsz mkisofs msmtp nano ninja-build \
+            p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply python3-docutils \
+            python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig \
+            texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd file
+
+      - name: Feeds update/install
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Load BPI-R4 config
+        run: |
+          set -euxo pipefail
+          cp -f defconfig/mt7988-bpi-r4-be14.config .config
+
+          # Do not use ./scripts/config (it may be a directory in some trees)
+          # Switch device by target symbols directly.
+          sed -i '/^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_bananapi_bpi-r4=/d' .config
+          sed -i '/^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_bananapi_bpi-r4-poe=/d' .config
+
+          case "$PROFILE" in
+            bananapi_bpi-r4)
+              echo 'CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_bananapi_bpi-r4=y' >> .config
+              ;;
+            bananapi_bpi-r4-poe)
+              echo 'CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_bananapi_bpi-r4-poe=y' >> .config
+              ;;
+            *)
+              echo "Unsupported profile: $PROFILE" >&2
+              exit 1
+              ;;
+          esac
+
+          make defconfig
+
+      - name: Download sources
+        run: make download -j"$(nproc)"
+
+      - name: Build firmware (retry once with -j1)
+        run: |
+          set -o pipefail
+          make -j"$(nproc)" V=s || {
+            echo "Parallel build failed, retry with single job for clear logs..."
+            make -j1 V=s
+          }
+
+      - name: Pack artifacts (safe flashing set)
+        run: |
+          set -eux
+          OUT="bin/targets/mediatek/filogic"
+          mkdir -p artifacts
+          cp -f "$OUT"/*"$PROFILE"*"sysupgrade.itb" artifacts/ || true
+          cp -f "$OUT"/*"$PROFILE"*"sdcard.img.gz" artifacts/ || true
+          cp -f "$OUT"/*.manifest artifacts/ || true
+          cp -f "$OUT"/*.buildinfo artifacts/ || true
+          cp -f "$OUT"/*.sha256sums artifacts/ || true
+          (cd artifacts && sha256sum * > sha256sum.local.txt)
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpi-r4-firmware-${{ env.PROFILE }}
+          path: artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/heads/')
+        with:
+          tag_name: bpi-r4-${{ env.PROFILE }}-${{ github.run_number }}
+          name: BPI-R4 (${{ env.PROFILE }}) build #${{ github.run_number }}
+          body: |
+            自动编译 Banana Pi BPI-R4 固件
+            - Profile: `${{ env.PROFILE }}`
+            - 默认地址: 192.168.6.1
+            - LuCI 主题: Argon
+            - 默认语言: 中文
+            - 启用 MediaTek HNAT
+            - MT7996/BE14 方向固件
+
+            ⚠️ 刷机说明（避免 System halt）
+            - 一般升级请优先使用 `*sysupgrade.itb`。
+            - 首次/救援写卡请使用 `*sdcard.img.gz`。
+            - 不要在不确认分区/引导链的情况下直接刷 preloader / fip 文件。
+          files: |
+            artifacts/*
