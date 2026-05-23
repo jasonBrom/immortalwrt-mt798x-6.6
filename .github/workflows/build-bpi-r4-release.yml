@@ -60,6 +60,10 @@ jobs:
           git checkout "$MTK_FEED_REF"
           echo "${MTK_FEED_REF:0:7}" > autobuild/unified/feed_revision
 
+          # Workaround: drop drifting MTK lvm2 feed patches before autobuild
+          rm -f "$MTK_FEEDS_DIR/autobuild/unified/filogic/24.10/patches-feeds/lvm2-01-add-host-build.patch"
+          rm -f "$MTK_FEEDS_DIR/autobuild/unified/filogic/24.10/patches-feeds/lvm2-02-split-dmsetup-from-lvm2-package.patch"
+
       - name: Run MTK autobuild prepare
         run: |
           set -euxo pipefail
