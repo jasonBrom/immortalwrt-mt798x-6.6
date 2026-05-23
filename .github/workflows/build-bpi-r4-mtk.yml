@@ -122,18 +122,45 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+
+      - name: Add Argon packages
+        run: |
+          set -euxo pipefail
+          cd "$OPENWRT_DIR"
+
+          rm -rf package/luci-theme-argon package/luci-app-argon-config
+
+          git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon.git package/luci-theme-argon
+          git clone --depth=1 https://github.com/jerrykuku/luci-app-argon-config.git package/luci-app-argon-config
+
       - name: Apply custom config and files
         run: |
           set -euxo pipefail
           cd "$OPENWRT_DIR"
+
           cp "$GITHUB_WORKSPACE/defconfig/mt7988-bpi-r4-be14.config" .config
+
           mkdir -p files
           rsync -a "$GITHUB_WORKSPACE/files/" files/
+
           make defconfig
 
           echo "===== final diffconfig ====="
           ./scripts/diffconfig.sh | tee "$GITHUB_WORKSPACE/final.diffconfig"
-          "$GITHUB_WORKSPACE/scripts/check-config.sh" .config
+
+          echo "===== check required packages ====="
+          grep -q '^CONFIG_PACKAGE_luci-theme-argon=y' .config
+          grep -q '^CONFIG_PACKAGE_luci-app-argon-config=y' .config
+          grep -q '^CONFIG_LUCI_LANG_zh_Hans=y' .config
+          grep -q '^CONFIG_PACKAGE_luci-i18n-base-zh-cn=y' .config
+          grep -q '^CONFIG_PACKAGE_mtkhnat_util=y' .config
+          grep -q '^CONFIG_PACKAGE_smp_util=y' .config
+          grep -q '^CONFIG_PACKAGE_kmod-nft-offload=y' .config
+
+          echo "===== remove stale default MTK autobuild images ====="
+          rm -rf bin/targets/mediatek/filogic
+          rm -rf build_dir/target-*/root-mediatek
+          rm -f staging_dir/target-*/stamp/.package_install || true
 
       - name: Download packages
         run: |

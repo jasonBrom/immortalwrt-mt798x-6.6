@@ -11,4 +11,7 @@ uci -q set firewall.@defaults[0].flow_offloading='1'
 uci -q set firewall.@defaults[0].flow_offloading_hw='1'
 uci -q commit firewall
 
+[ -x /etc/init.d/mtkhnat ] && /etc/init.d/mtkhnat enable
+[ -x /etc/init.d/smp ] && /etc/init.d/smp enable
+
 exit 0
